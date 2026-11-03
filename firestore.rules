@@ -1,0 +1,112 @@
+rules_version = '2';
+
+// DocApp data model — must stay in sync with src/services/firestore.ts.
+//
+//   clinics/{clinicId}            catalogue, readable by any signed-in user
+//   doctors/{uid}                 doctor profile, document id === auth uid
+//   patients/{uid}                patient profile, document id === auth uid
+//   appointments/{appointmentId}  patientId and doctorId are auth uids
+//   slots/{slotId}                doctorId is the owning doctor's uid
+//   notifications/{id}            userId is the recipient's uid
+//   admins/{uid}                  created from the console or Admin SDK only
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function uid() {
+      return request.auth.uid;
+    }
+
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(uid()));
+    }
+
+    function isDoctor() {
+      return signedIn() && exists(/databases/$(database)/documents/doctors/$(uid()));
+    }
+
+    // Read your own flag so the client can resolve its role; never writable
+    // from a client, otherwise anyone could promote themselves.
+    match /admins/{adminId} {
+      allow read: if adminId == uid() || isAdmin();
+      allow write: if false;
+    }
+
+    match /clinics/{clinicId} {
+      allow read: if signedIn();
+      allow write: if isAdmin();
+    }
+
+    match /doctors/{doctorId} {
+      allow read: if signedIn();
+      // A doctor creates their own profile during sign-up (the document does
+      // not exist yet, so isDoctor() cannot be used for create).
+      allow create: if isAdmin() ||
+        (signedIn() && doctorId == uid() && request.resource.data.userId == uid());
+      allow update: if isAdmin() || (signedIn() && doctorId == uid());
+      allow delete: if isAdmin();
+    }
+
+    match /patients/{patientId} {
+      allow read: if signedIn() && (patientId == uid() || isDoctor() || isAdmin());
+      allow create: if isAdmin() || (signedIn() && patientId == uid());
+      allow update: if isAdmin() || (signedIn() && patientId == uid());
+      allow delete: if isAdmin();
+    }
+
+    match /appointments/{appointmentId} {
+      allow read: if signedIn() && (
+        resource.data.patientId == uid() ||
+        resource.data.doctorId == uid() ||
+        isAdmin()
+      );
+
+      allow create: if signedIn() && (
+        request.resource.data.patientId == uid() ||
+        request.resource.data.doctorId == uid() ||
+        isAdmin()
+      );
+
+      // Doctors advance the queue; patients may only cancel their own booking.
+      allow update: if signedIn() && (
+        isAdmin() ||
+        (resource.data.doctorId == uid() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+            ['status', 'actualStart', 'actualEnd', 'notes', 'updatedAt']
+          )) ||
+        (resource.data.patientId == uid() &&
+          request.resource.data.status == 'cancelled' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+            ['status', 'cancellationReason', 'updatedAt']
+          ))
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    match /slots/{slotId} {
+      allow read: if signedIn();
+      allow create: if isAdmin() ||
+        (signedIn() && request.resource.data.doctorId == uid());
+      // Owners manage their slots; a patient may only claim a slot that is
+      // still free, and only the booking fields may change.
+      allow update: if isAdmin() ||
+        (signedIn() && resource.data.doctorId == uid()) ||
+        (signedIn() &&
+          resource.data.isBooked == false &&
+          request.resource.data.isBooked == true &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+            ['isBooked', 'appointmentId', 'updatedAt']
+          ));
+      allow delete: if isAdmin() || (signedIn() && resource.data.doctorId == uid());
+    }
+
+    match /notifications/{notificationId} {
+      allow read, update, delete: if signedIn() && resource.data.userId == uid();
+      allow create: if signedIn();
+    }
+  }
+}
