@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import {
   Box,
   Card,
@@ -51,6 +51,7 @@ const steps = ["Select Date", "Choose Slot", "Confirm Booking"];
 export function BookingPage() {
   const { doctorId } = useParams<{ doctorId: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = useAuth();
   const [activeStep, setActiveStep] = useState(0);
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -63,6 +64,13 @@ export function BookingPage() {
   const [error, setError] = useState<string | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
 
+  // Check for pre-selected slot from BookingPickerPage
+  const state = location.state as {
+    preSelectedSlot?: Slot;
+    preSelectedDate?: Date;
+    preSelectedClinic?: string;
+  } | null;
+
   useEffect(() => {
     if (doctorId) {
       loadDoctor();
@@ -74,6 +82,15 @@ export function BookingPage() {
       loadSlots();
     }
   }, [doctorId, selectedDate]);
+
+  // Handle pre-selected slot from state
+  useEffect(() => {
+    if (state?.preSelectedSlot && state?.preSelectedDate) {
+      setSelectedDate(state.preSelectedDate);
+      setSelectedSlot(state.preSelectedSlot);
+      setActiveStep(2); // Skip to confirmation step
+    }
+  }, [state]);
 
   const loadDoctor = async () => {
     try {

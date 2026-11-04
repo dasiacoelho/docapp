@@ -17,6 +17,14 @@ export interface Clinic {
   settings: ClinicSettings;
   createdAt: Date;
   updatedAt: Date;
+  availableDoctors?: number;
+  availableDoctorDetails?: Array<{
+    name: string;
+    specialization: string;
+    rating?: number;
+    experienceYears?: number;
+    photoUrl?: string;
+  }>;
 }
 
 export interface ClinicSettings {
@@ -38,6 +46,9 @@ export interface Doctor {
   phone?: string;
   qualification?: string;
   experienceYears?: number;
+  rating?: number;
+  reviewCount?: number;
+  defaultVisitDuration?: number;
   availability?: any[];
   workingHours: Record<string, WorkingHours>;
   status: 'active' | 'inactive' | 'on_leave';

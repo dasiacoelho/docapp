@@ -41,7 +41,8 @@ export function AppRoutes() {
           <Route index element={<RoleHome />} />
 
           <Route element={<PatientGuard />}>
-            <Route path="patient/dashboard" element={<PatientDashboard />} />
+            <Route index element={<BookingPickerPage />} />
+            <Route path="patient" element={<BookingPickerPage />} />
             <Route path="patient/booking" element={<BookingPickerPage />} />
             <Route path="patient/booking/:doctorId" element={<BookingPage />} />
             <Route path="patient/queue" element={<QueuePage />} />

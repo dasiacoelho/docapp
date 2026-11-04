@@ -1,7 +1,7 @@
 import React from 'react';
-import { Box, FormControl, InputLabel, TextField, IconButton, Tooltip, Typography } from '@mui/material';
+import { Box, TextField, IconButton, Tooltip, Typography, useMediaQuery, useTheme } from '@mui/material';
 import { CalendarMonth, ChevronLeft, ChevronRight } from '@mui/icons-material';
-import { format, parseISO, addDays, subDays, startOfWeek, endOfWeek, isSameDay } from 'date-fns';
+import { format, parseISO, addDays, subDays, startOfWeek, endOfWeek } from 'date-fns';
 
 interface DatePickerProps {
   value: Date;
@@ -22,6 +22,9 @@ export function DatePicker({
   showWeekNavigation = true,
   label = 'Date',
 }: DatePickerProps) {
+  const theme = useTheme();
+  const isXs = useMediaQuery(theme.breakpoints.down('sm'));
+
   const handleDateChange = (date: Date) => {
     if (minDate && isBefore(date, minDate)) return;
     if (maxDate && isAfter(date, maxDate)) return;
@@ -38,62 +41,79 @@ export function DatePicker({
   const weekEnd = endOfWeek(value, { weekStartsOn: 0 });
 
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-      <FormControl size="small" fullWidth sx={{ minWidth: 200, flex: 1 }}>
-        <InputLabel id="date-picker-label">{label}</InputLabel>
-        <TextField
-          fullWidth
-          type="date"
-          value={format(value, 'yyyy-MM-dd')}
-          onChange={(e) => handleDateChange(parseISO(e.target.value))}
-          disabled={disabled}
-          slotProps={{
-            inputLabel: { shrink: true },
-            htmlInput: {
-              min: minDate ? format(minDate, 'yyyy-MM-dd') : undefined,
-              max: maxDate ? format(maxDate, 'yyyy-MM-dd') : undefined,
-            },
-          }}
-        />
-      </FormControl>
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'nowrap', width: '100%' }}>
+      {/* Date input */}
+      <TextField
+        size="small"
+        type="date"
+        label={label}
+        value={format(value, 'yyyy-MM-dd')}
+        onChange={(e) => e.target.value && handleDateChange(parseISO(e.target.value))}
+        disabled={disabled}
+        sx={{ minWidth: { xs: 120, sm: 140 }, flex: '0 0 auto' }}
+        slotProps={{
+          inputLabel: { shrink: true },
+          htmlInput: {
+            min: minDate ? format(minDate, 'yyyy-MM-dd') : undefined,
+            max: maxDate ? format(maxDate, 'yyyy-MM-dd') : undefined,
+          },
+        }}
+      />
 
       {showWeekNavigation && (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Tooltip title="Previous week">
-            <IconButton size="small" onClick={goToPreviousWeek} disabled={disabled || (minDate && isBefore(subDays(value, 7), minDate))}>
-              <ChevronLeft />
-            </IconButton>
-          </Tooltip>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0, flex: 1, overflow: 'hidden' }}>
+          {/* Prev week — hide on xs */}
+          {!isXs && (
+            <Tooltip title="Previous week">
+              <span>
+                <IconButton size="small" onClick={goToPreviousWeek} disabled={disabled || (!!minDate && isBefore(subDays(value, 7), minDate))}>
+                  <ChevronLeft fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
           <Tooltip title="Previous day">
-            <IconButton size="small" onClick={goToPreviousDay} disabled={disabled || (minDate && isBefore(subDays(value, 1), minDate))}>
-              <ChevronLeft style={{ transform: 'scale(0.7)' }} />
-            </IconButton>
+            <span>
+              <IconButton size="small" onClick={goToPreviousDay} disabled={disabled || (!!minDate && isBefore(subDays(value, 1), minDate))}>
+                <ChevronLeft fontSize="small" sx={{ transform: 'scale(0.75)' }} />
+              </IconButton>
+            </span>
           </Tooltip>
-          
-          <Box sx={{ px: 1, textAlign: 'center', minWidth: 120 }}>
-            <Typography variant="caption" color="text.secondary">
-              {format(weekStart, 'MMM d')} - {format(weekEnd, 'd, yyyy')}
-            </Typography>
-            <Typography variant="body2" fontWeight={500}>
-              {format(value, 'EEEE, MMM d')}
+
+          {/* Centre label */}
+          <Box sx={{ px: 0.5, textAlign: 'center', minWidth: 0, flex: 1, overflow: 'hidden' }}>
+            {!isXs && (
+              <Typography variant="caption" color="text.secondary" noWrap display="block" sx={{ fontSize: '0.68rem' }}>
+                {format(weekStart, 'MMM d')} – {format(weekEnd, 'd, yyyy')}
+              </Typography>
+            )}
+            <Typography variant="body2" fontWeight={500} noWrap sx={{ fontSize: { xs: '0.78rem', sm: '0.83rem' } }}>
+              {isXs ? format(value, 'EEE, MMM d') : format(value, 'EEEE, MMM d')}
             </Typography>
           </Box>
-          
+
           <Tooltip title="Next day">
-            <IconButton size="small" onClick={goToNextDay} disabled={disabled || (maxDate && isAfter(addDays(value, 1), maxDate))}>
-              <ChevronRight style={{ transform: 'scale(0.7)' }} />
-            </IconButton>
+            <span>
+              <IconButton size="small" onClick={goToNextDay} disabled={disabled || (!!maxDate && isAfter(addDays(value, 1), maxDate))}>
+                <ChevronRight fontSize="small" sx={{ transform: 'scale(0.75)' }} />
+              </IconButton>
+            </span>
           </Tooltip>
-          <Tooltip title="Next week">
-            <IconButton size="small" onClick={goToNextWeek} disabled={disabled || (maxDate && isAfter(addDays(value, 7), maxDate))}>
-              <ChevronRight />
-            </IconButton>
-          </Tooltip>
-          
-          <Tooltip title="Today">
-            <IconButton size="small" onClick={goToToday} disabled={disabled}>
-              <CalendarMonth fontSize="small" color="primary" />
-            </IconButton>
+          {!isXs && (
+            <Tooltip title="Next week">
+              <span>
+                <IconButton size="small" onClick={goToNextWeek} disabled={disabled || (!!maxDate && isAfter(addDays(value, 7), maxDate))}>
+                  <ChevronRight fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
+          <Tooltip title="Go to today">
+            <span>
+              <IconButton size="small" onClick={goToToday} disabled={disabled}>
+                <CalendarMonth fontSize="small" color="primary" />
+              </IconButton>
+            </span>
           </Tooltip>
         </Box>
       )}

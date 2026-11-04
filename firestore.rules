@@ -42,16 +42,30 @@ service cloud.firestore {
 
     match /doctors/{doctorId} {
       allow read: if signedIn();
-      // A doctor creates their own profile during sign-up (the document does
-      // not exist yet, so isDoctor() cannot be used for create).
-      allow create: if isAdmin() ||
-        (signedIn() && doctorId == uid() && request.resource.data.userId == uid());
-      allow update: if isAdmin() || (signedIn() && doctorId == uid());
+      // Only admins can create doctor profiles. Doctor self-registration
+      // must go through admin invitation/approval flow.
+      allow create: if isAdmin();
+      // Doctors can update their own profile except admin-only fields:
+      // rating, reviewCount, defaultVisitDuration
+      allow update: if isAdmin() ||
+        (signedIn() && doctorId == uid() &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+            ['name', 'specialization', 'phone', 'qualification', 'experienceYears',
+             'workingHours', 'availability', 'status', 'photoUrl', 'email', 'updatedAt']
+          ));
       allow delete: if isAdmin();
     }
 
     match /patients/{patientId} {
-      allow read: if signedIn() && (patientId == uid() || isDoctor() || isAdmin());
+      allow read: if signedIn() && (
+        patientId == uid() ||
+        isAdmin() ||
+        isDoctor()
+      );
+      // Note: Application-level filtering required - doctors should only
+      // query patients linked via appointments in their frontend code.
+      // Firestore rules cannot efficiently enforce doctor-patient relationship
+      // without a dedicated mapping collection (doctorPatients).
       allow create: if isAdmin() || (signedIn() && patientId == uid());
       allow update: if isAdmin() || (signedIn() && patientId == uid());
       allow delete: if isAdmin();

@@ -313,6 +313,33 @@ export const clinicService = {
     return INITIAL_CLINICS;
   },
 
+  async getBySpecialization(specialization: string, date?: string): Promise<Clinic[]> {
+    try {
+      // Get all clinics
+      const clinics = await clinicService.getAll();
+      if (clinics.length === 0) return [];
+      
+      // Get doctors for each clinic and check if they have the specialization and availability
+      const clinicsWithSpecialization = [];
+      for (const clinic of clinics) {
+        const doctors = await doctorService.getByClinicAndSpecialization(clinic.id, specialization, date);
+        if (doctors.length > 0) {
+          clinicsWithSpecialization.push({ ...clinic, availableDoctors: doctors.length });
+        }
+      }
+      return clinicsWithSpecialization;
+    } catch {
+      // Fallback
+    }
+    return INITIAL_CLINICS.filter((c) => 
+      INITIAL_DOCTORS.some(d => 
+        d.clinicIds.includes(c.id) && 
+        d.specialization.toLowerCase() === specialization.toLowerCase() && 
+        d.status === "active"
+      )
+    ).map(c => ({ ...c, availableDoctors: 1 }));
+  },
+
   async getById(id: string): Promise<Clinic | null> {
     try {
       const clinic = await firestoreService.getDoc<Clinic>(
@@ -392,6 +419,93 @@ export const doctorService = {
     );
   },
 
+  async getByClinicAndSpecialization(
+    clinicId: string,
+    specialization: string,
+    date?: string,
+  ): Promise<Doctor[]> {
+    try {
+      let constraints = [
+        where("clinicIds", "array-contains", clinicId),
+        where("specialization", "==", specialization),
+        where("status", "==", "active"),
+        orderBy("name"),
+      ];
+      const doctors = await firestoreService.getDocs<Doctor>(
+        COLLECTIONS.DOCTORS,
+        constraints,
+      );
+      if (doctors.length > 0) {
+        if (date) {
+          // Filter to only doctors with available slots on that date
+          const availableDoctors = [];
+          for (const doc of doctors) {
+            const slots = await slotService.getAvailableSlots(doc.id, date);
+            if (slots.length > 0) {
+              availableDoctors.push(doc);
+            }
+          }
+          return availableDoctors;
+        }
+        return doctors;
+      }
+    } catch {
+      // Fallback
+    }
+    const filtered = INITIAL_DOCTORS.filter(
+      (d) =>
+        d.clinicIds.includes(clinicId) &&
+        d.specialization.toLowerCase() === specialization.toLowerCase() &&
+        d.status === "active",
+    );
+    return filtered;
+  },
+
+  async getAvailableDoctorsByClinicAndDate(
+    clinicId: string,
+    date: string,
+    specialization?: string,
+  ): Promise<Doctor[]> {
+    try {
+      let constraints = [
+        where("clinicIds", "array-contains", clinicId),
+        where("status", "==", "active"),
+        orderBy("name"),
+      ];
+      const doctors = await firestoreService.getDocs<Doctor>(
+        COLLECTIONS.DOCTORS,
+        constraints,
+      );
+      if (doctors.length > 0) {
+        let filtered = doctors;
+        if (specialization) {
+          filtered = doctors.filter(
+            (d) => d.specialization.toLowerCase() === specialization.toLowerCase(),
+          );
+        }
+        const availableDoctors = [];
+        for (const doc of filtered) {
+          const slots = await slotService.getAvailableSlots(doc.id, date);
+          if (slots.length > 0) {
+            availableDoctors.push(doc);
+          }
+        }
+        return availableDoctors;
+      }
+    } catch {
+      // Fallback
+    }
+    let filtered = INITIAL_DOCTORS.filter(
+      (d) => d.clinicIds.includes(clinicId) && d.status === "active",
+    );
+    if (specialization) {
+      filtered = filtered.filter(
+        (d) => d.specialization.toLowerCase() === specialization.toLowerCase(),
+      );
+    }
+    return filtered;
+  },
+
   async getByUserId(userId: string): Promise<Doctor | null> {
     try {
       const doctors = await firestoreService.getDocs<Doctor>(
@@ -407,6 +521,22 @@ export const doctorService = {
       INITIAL_DOCTORS[0] ||
       null
     );
+  },
+
+  async getAllSpecializations(): Promise<string[]> {
+    try {
+      const doctors = await firestoreService.getDocs<Doctor>(
+        COLLECTIONS.DOCTORS,
+        [where("status", "==", "active")],
+      );
+      if (doctors.length > 0) {
+        const specializations = [...new Set(doctors.map((d) => d.specialization))];
+        return specializations.sort();
+      }
+    } catch {
+      // Fallback
+    }
+    return [...new Set(INITIAL_DOCTORS.filter(d => d.status === "active").map((d) => d.specialization))].sort();
   },
 
   async create(
