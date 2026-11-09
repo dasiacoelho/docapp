@@ -12,7 +12,7 @@ interface RoleGuardProps {
 // A user is always sent to their own portal, never to another role's portal.
 // That is what used to make admins bounce between /patient and /doctor forever.
 export const ROLE_HOME: Record<Role, string> = {
-  patient: "/patient/dashboard",
+  patient: "/patient/booking",
   doctor: "/doctor/dashboard",
   admin: "/admin/dashboard",
 };

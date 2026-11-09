@@ -8,7 +8,6 @@ import {
   AuthGuard,
   RoleHome,
 } from "../features/auth/components/RoleGuard";
-import { PatientDashboard } from "../features/patient/pages/PatientDashboard";
 import { BookingPage } from "../features/patient/pages/BookingPage";
 import { BookingPickerPage } from "../features/patient/pages/BookingPickerPage";
 import { QueuePage } from "../features/patient/pages/QueuePage";

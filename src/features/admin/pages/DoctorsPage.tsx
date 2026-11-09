@@ -36,13 +36,17 @@ import {
   Stack,
   ImageList,
   ImageListItem,
+  DialogContentText,
+  CopyToClipboard,
+  Snackbar,
 } from '@mui/material';
-import { People, Add, Edit, Delete, Visibility, MedicalInformation, Schedule, Save, Close, PersonAdd, ToggleOn, ToggleOff, PhotoCamera, Delete as DeleteIcon } from '@mui/icons-material';
+import { People, Add, Edit, Delete, Visibility, MedicalInformation, Schedule, Save, Close, PersonAdd, ToggleOn, ToggleOff, PhotoCamera, Delete as DeleteIcon, Key, ContentCopy, Description, Terminal, Download } from '@mui/icons-material';
 import { doctorService, clinicService, firestoreService } from '../../../services/firestore';
 import type { Doctor, Clinic } from '../../../types';
 import { useAuth } from '../../../features/auth/hooks';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { app } from '../../../services/firebase';
+import { getAuth } from 'firebase/auth';
+import { app, getFirebaseAuth } from '../../../services/firebase';
 
 export function DoctorsPage() {
   const { user } = useAuth();
@@ -71,6 +75,12 @@ export function DoctorsPage() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Login credentials state
+  const [showLoginDialog, setShowLoginDialog] = useState(false);
+  const [loginDoctor, setLoginDoctor] = useState<Doctor | null>(null);
+  const [generatedPassword, setGeneratedPassword] = useState<string>('');
+  const [copiedField, setCopiedField] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -235,6 +245,226 @@ const handleSave = async () => {
     }
   };
 
+  const generatePassword = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
+    let password = '';
+    for (let i = 0; i < 16; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return password;
+  };
+
+  const handleCreateLogin = (doctor: Doctor) => {
+    const password = generatePassword();
+    setLoginDoctor(doctor);
+    setGeneratedPassword(password);
+    setShowLoginDialog(true);
+  };
+
+  const createDoctorAuthUser = async (doctor: Doctor, password: string) => {
+    // Get admin's ID token
+    const auth = getAuth(app);
+    const currentUser = auth.currentUser;
+    if (!currentUser) throw new Error("Admin not authenticated");
+
+    // Use the correct API key from Firebase config
+    const apiKey = app.options.apiKey;
+    
+    console.log('Creating doctor auth user:', doctor.email, doctor.id);
+    
+    // First, create user via REST API (generates random UID)
+    const signUpResponse = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: doctor.email,
+          password,
+          displayName: doctor.name,
+          returnSecureToken: true,
+        }),
+      }
+    );
+
+    console.log('SignUp response status:', signUpResponse.status);
+    const signUpResult = await signUpResponse.json();
+    console.log('SignUp result:', signUpResult);
+    
+    if (signUpResult.error) {
+      console.error('SignUp error:', signUpResult.error);
+      if (signUpResult.error.message === "EMAIL_EXISTS") {
+        // User exists, try to sign in
+        const signInResponse = await fetch(
+          `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: doctor.email, password }),
+          }
+        );
+        const signInResult = await signInResponse.json();
+        if (signInResult.error) {
+          throw new Error(signInResult.error.message || "Failed to sign in existing user");
+        }
+        return { uid: signInResult.localId, password, isExisting: true };
+      }
+      throw new Error(signUpResult.error.message || "Failed to create user");
+    }
+
+    const authUid = signUpResult.localId;
+    console.log('Created user with UID:', authUid);
+    
+    return { uid: authUid, password, isExisting: false };
+  };
+
+  const handleCreateLoginAndAuth = async () => {
+    if (!loginDoctor || !generatedPassword) return;
+    
+    setSaving(true);
+    setError(null);
+    try {
+      console.log('Starting doctor login creation for:', loginDoctor.email);
+      const result = await createDoctorAuthUser(loginDoctor, generatedPassword);
+      console.log('Auth user result:', result);
+      
+      if (result.uid !== loginDoctor.id) {
+        // Auth UID differs from Firestore document ID
+        // Create new doctor document with Auth UID, copy data, delete old
+        await createDoctorWithAuthUid(loginDoctor, result.uid);
+      } else {
+        // UIDs match (rare with REST API), just mark as created
+        await doctorService.update(loginDoctor.id, {
+          authCreated: true,
+          authCreatedAt: new Date(),
+        });
+      }
+      
+      setShowLoginDialog(false);
+      setError("Doctor login created successfully! Credentials ready to share.");
+      await loadData();
+    } catch (err: any) {
+      console.error('Create doctor login error:', err);
+      setError(err.message || "Failed to create doctor login");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const createDoctorWithAuthUid = async (doctor: Doctor, authUid: string) => {
+    // Create new doctor document with Auth UID as document ID
+    const newDoctorData = {
+      ...doctor,
+      id: authUid,
+      userId: authUid,
+      authCreated: true,
+      authCreatedAt: new Date(),
+    };
+    
+    // Create new document with Auth UID
+    await firestoreService.setDoc('doctors', newDoctorData, authUid);
+    
+    // Delete old document
+    await doctorService.delete(doctor.id);
+    
+    // Update any references if needed (appointments, slots, etc.)
+    // For now, just log that manual cleanup may be needed
+    console.log(`Doctor document migrated from ${doctor.id} to ${authUid}`);
+  };
+
+  const copyToClipboard = (text: string, field: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const downloadScript = () => {
+    if (!loginDoctor) return;
+const script = `#!/usr/bin/env node
+// Doctor Login Creator Script
+// Run: node create-doctor-login.js
+// Requires: npm install firebase-admin
+
+const admin = require('firebase-admin');
+const fs = require('fs');
+
+// Load service account key
+// Download from: Firebase Console > Project Settings > Service Accounts > Generate New Private Key
+const serviceAccount = require('./service-account-key.json');
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  projectId: 'docapp-e64d9'
+});
+
+const auth = admin.auth();
+const db = admin.firestore();
+
+const doctorData = {
+  uid: '${loginDoctor.id}',
+  email: '${loginDoctor.email}',
+  password: '${generatedPassword}',
+  displayName: '${loginDoctor.name}',
+};
+
+async function createDoctorLogin() {
+  try {
+    console.log('Creating Firebase Auth user for:', doctorData.email);
+    
+    // Create user in Firebase Auth with specific UID
+    const userRecord = await auth.createUser({
+      uid: doctorData.uid,
+      email: doctorData.email,
+      password: doctorData.password,
+      displayName: doctorData.displayName,
+      emailVerified: false,
+      disabled: false,
+    });
+    
+    console.log('User created:', userRecord.uid);
+    
+    // Set custom claims for role detection
+    await auth.setCustomUserClaims(doctorData.uid, { role: 'doctor' });
+    console.log('Custom claims set: role=doctor');
+    
+    // Update Firestore doctor document with auth info
+    await db.collection('doctors').doc(doctorData.uid).update({
+      authCreated: true,
+      authCreatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    console.log('Firestore updated');
+    
+    console.log('Doctor Login Credentials:');
+    console.log('Email:', doctorData.email);
+    console.log('Password:', doctorData.password);
+    console.log('Share these credentials securely with the doctor.');
+    console.log('The doctor should log in at: https://docapp-e64d9.web.app/login');
+    console.log('They will be prompted to change password on first login.');
+    
+  } catch (error) {
+    if (error.code === 'auth/uid-already-exists') {
+      console.log('User already exists with this UID. Updating password...');
+      await auth.updateUser(doctorData.uid, { password: doctorData.password });
+      await auth.setCustomUserClaims(doctorData.uid, { role: 'doctor' });
+      console.log('Password updated and claims set');
+    } else {
+      console.error('Error:', error);
+    }
+  }
+}
+
+createDoctorLogin().then(() => process.exit(0)).catch(() => process.exit(1));
+`;
+
+    const blob = new Blob([script], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `create-doctor-login-${loginDoctor.id}.js`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   if (loading) {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
@@ -315,6 +545,11 @@ const handleSave = async () => {
                     />
                   </TableCell>
                   <TableCell align="right">
+                    <Tooltip title="Create Login">
+                      <IconButton size="small" color="primary" onClick={() => handleCreateLogin(doctor)}>
+                        <Key />
+                      </IconButton>
+                    </Tooltip>
                     <Tooltip title="View">
                       <IconButton size="small" onClick={() => handleOpenDialog(doctor)}><Visibility /></IconButton>
                     </Tooltip>
@@ -547,6 +782,104 @@ const handleSave = async () => {
           <Button variant="contained" onClick={handleSave} disabled={saving} startIcon={saving ? <CircularProgress size={20} color="inherit" /> : <Save />}>
             {saving ? 'Saving...' : editingDoctor ? 'Update' : 'Create'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Login Credentials Dialog */}
+      <Dialog open={showLoginDialog} onClose={() => setShowLoginDialog(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Key color="primary" />
+          Create Doctor Login
+        </DialogTitle>
+        <DialogContent>
+          {loginDoctor && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Alert severity="info" sx={{ mb: 1 }}>
+                <Typography variant="body2">
+                  This will create a Firebase Auth account for <strong>Dr. {loginDoctor.name}</strong> 
+                  ({loginDoctor.email}). A secure password has been generated.
+                </Typography>
+              </Alert>
+              
+              <Divider sx={{ my: 1 }} />
+              
+              <Typography variant="h6" gutterBottom>Login Credentials</Typography>
+              <Box sx={{ border: '1px solid #e2e8f0', borderRadius: '12px', p: 2, bgcolor: '#fafafa' }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ minWidth: 100, fontWeight: 500 }}>Email:</Typography>
+                  <Box sx={{ flex: 1, fontFamily: 'monospace', fontSize: '0.9rem' }}>
+                    {loginDoctor.email}
+                  </Box>
+                  <Button size="small" startIcon={<ContentCopy />} onClick={() => copyToClipboard(loginDoctor.email, 'email')} variant="outlined" disabled={copiedField === 'email'}>
+                    {copiedField === 'email' ? 'Copied!' : 'Copy'}
+                  </Button>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ minWidth: 100, fontWeight: 500 }}>Password:</Typography>
+                  <Box sx={{ flex: 1, fontFamily: 'monospace', fontSize: '0.9rem', letterSpacing: '0.5px' }}>
+                    {generatedPassword}
+                  </Box>
+                  <Button size="small" startIcon={<ContentCopy />} onClick={() => copyToClipboard(generatedPassword, 'password')} variant="outlined" disabled={copiedField === 'password'}>
+                    {copiedField === 'password' ? 'Copied!' : 'Copy'}
+                  </Button>
+                </Box>
+              </Box>
+              
+              <Divider sx={{ my: 1 }} />
+              
+              <Alert severity="warning" sx={{ mb: 1 }}>
+                <Typography variant="body2">
+                  <strong>⚠️ Important:</strong> Save these credentials now. The password cannot be retrieved later.
+                  Share securely with the doctor (e.g., password manager, encrypted email).
+                </Typography>
+              </Alert>
+              
+              <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+                <Button 
+                  variant="contained" 
+                  startIcon={<Save />} 
+                  onClick={handleCreateLoginAndAuth}
+                  disabled={saving}
+                  size="large"
+                >
+                  {saving ? (
+                    <>
+                      <CircularProgress size={18} sx={{ mr: 1 }} /> Creating Auth Account...
+                    </>
+                  ) : (
+                    'Create Firebase Auth Account & Generate Credentials'
+                  )}
+                </Button>
+                <Button variant="outlined" startIcon={<Download />} onClick={downloadScript}>
+                  <Description /> Download Admin Script (Alternative)
+                </Button>
+              </Box>
+              
+              <Divider sx={{ my: 1 }} />
+              
+              <Typography variant="h6" gutterBottom>Manual Steps (if automated fails)</Typography>
+              <Box sx={{ border: '1px solid #e2e8f0', borderRadius: '12px', p: 2, bgcolor: '#f8fafc' }}>
+                <Typography variant="body2" color="text.secondary" gutterBottom>
+                  <strong>Option 2: Manual (Firebase Console)</strong>
+                </Typography>
+                <Typography variant="body2" paragraph>
+                  1. Go to Firebase Console - Project Settings - Authentication - Users
+                </Typography>
+                <Typography variant="body2" paragraph>
+                  2. Click "Add user" - Enter email: <strong>{loginDoctor.email}</strong> and the password above
+                </Typography>
+                <Typography variant="body2" paragraph>
+                  3. Copy the <strong>UID</strong> from the created user
+                </Typography>
+                <Typography variant="body2" paragraph>
+                  4. In Firestore, update the doctor document <span style={{fontFamily: 'monospace', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px', fontSize: '0.85em'}}>{loginDoctor.id}</span> to ensure the document ID matches the UID
+                </Typography>
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowLoginDialog(false)}>Close</Button>
         </DialogActions>
       </Dialog>
     </Box>

@@ -8,7 +8,7 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: "autoUpdate",
+      registerType: "none",
       includeAssets: ["favicon.ico", "apple-touch-icon.png"],
       manifest: {
         name: "DocApp - Doctor Appointment System",

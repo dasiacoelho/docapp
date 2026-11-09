@@ -54,12 +54,21 @@ export function BookingPickerPage() {
 
   // Load specializations on mount
   useEffect(() => {
-    doctorService.getAllSpecializations().then(setSpecializations);
+    doctorService.getAllSpecializations().then(setSpecializations).catch(() => setSpecializations([]));
   }, []);
 
   // Load clinics on mount
   useEffect(() => {
-    clinicService.getAll().then(setClinics);
+    clinicService.getAll().then((data) => {
+      setClinics(data);
+      // Auto-select first clinic if none selected
+      if (data.length > 0 && !selectedClinicId) {
+        onClinicChange(data[0].id);
+      }
+    }).catch((err) => {
+      console.error('Failed to load clinics:', err);
+      setError('Failed to load clinics');
+    });
   }, []);
 
   // Load doctors when clinic, date, or specialization changes
@@ -105,7 +114,7 @@ export function BookingPickerPage() {
     setSelectedDoctor(doctor);
     try {
       const dateStr = formatDate(selectedDate, 'yyyy-MM-dd');
-      const slots = await slotService.getAvailableSlots(doctor.id, dateStr);
+      const slots = await slotService.getByDoctorAndDate(doctor.id, dateStr);
       setAvailableSlots(slots);
     } catch (err) {
       console.error('Failed to load slots:', err);
@@ -116,7 +125,7 @@ export function BookingPickerPage() {
   };
 
   const handleBookSlot = (slot: Slot) => {
-    if (!selectedDoctor || !user) return;
+    if (!selectedDoctor || !user || slot.isBooked || slot.isBlocked) return;
     navigate(`/patient/booking/${selectedDoctor.id}`, { 
       state: { 
         preSelectedSlot: slot, 
@@ -129,25 +138,13 @@ export function BookingPickerPage() {
   const handleOtherClinics = async () => {
     if (!selectedSpecialization || !selectedDate) return;
     setShowOtherClinics(true);
+    setClinics(prev => prev.map(({ availableDoctors, availableDoctorDetails, ...clinic }) => clinic));
     try {
       const dateStr = formatDate(selectedDate, 'yyyy-MM-dd');
       const otherClinics = await clinicService.getBySpecialization(selectedSpecialization, dateStr);
       // Filter out current clinic
       const filtered = otherClinics.filter(c => c.id !== selectedClinicId);
-      
-      // Fetch doctor details for each clinic
-      for (const clinic of filtered) {
-        const doctors = await doctorService.getByClinicAndSpecialization(clinic.id, selectedSpecialization, dateStr);
-        clinic.availableDoctors = doctors.length;
-        clinic.availableDoctorDetails = doctors.map(d => ({
-          name: d.name,
-          specialization: d.specialization,
-          rating: d.rating,
-          experienceYears: d.experienceYears,
-          photoUrl: d.photoUrl,
-        }));
-      }
-      
+
       setClinics(prev => prev.map(c => {
         const found = filtered.find(fc => fc.id === c.id);
         return found ? { ...c, availableDoctors: found.availableDoctors, availableDoctorDetails: found.availableDoctorDetails } : c;
@@ -266,6 +263,19 @@ export function BookingPickerPage() {
               </Box>
             </Box>
 
+            {!loading && selectedSpecialization && (
+              <Box sx={{ mb: 2 }}>
+                <Button
+                  variant="outlined"
+                  startIcon={<Search />}
+                  onClick={handleOtherClinics}
+                  sx={{ borderRadius: '10px' }}
+                >
+                  Find Other Clinics for {selectedSpecialization}
+                </Button>
+              </Box>
+            )}
+
             {/* Loading State */}
             {loading && (
               <Grid container spacing={2}>
@@ -282,33 +292,28 @@ export function BookingPickerPage() {
               <Box sx={{ textAlign: 'center', py: 5 }}>
                 <LocalHospital sx={{ fontSize: 48, color: '#94a3b8', mb: 2 }} />
                 <Typography variant="h6" color="text.secondary" gutterBottom>
-                  No {selectedSpecialization || 'available'} doctors on this date
+                  No {selectedSpecialization ? `${selectedSpecialization} ` : ''}doctors found
                 </Typography>
                 <Typography variant="body1" color="text.secondary" paragraph>
-                  No doctors with {selectedSpecialization || 'available slots'} are free at {currentClinic?.name || 'this clinic'} on {formatDate(selectedDate, 'MMMM d, yyyy')}.
+                  No active doctors{selectedSpecialization ? ` specializing in ${selectedSpecialization}` : ''} are linked to {currentClinic?.name || 'this clinic'}.
                 </Typography>
-                <Button
-                  variant="contained"
-                  startIcon={<Search />}
-                  onClick={handleOtherClinics}
-                  sx={{ mt: 2, borderRadius: '10px' }}
-                >
-                  Find Other Clinics for {selectedSpecialization || 'This Specialization'}
-                </Button>
               </Box>
             )}
 
             {/* Other Clinics Recommendation */}
-            {showOtherClinics && otherClinicsWithAvailability.length > 0 && (
+            {showOtherClinics && (
               <Box sx={{ mt: 3, p: 2, borderRadius: '12px', border: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
                   <Typography variant="h6" fontWeight={700} color="#0f172a">
-                    Other Clinics with {selectedSpecialization} Availability
+                    Other Clinics with {selectedSpecialization} Doctors
                   </Typography>
                   <Button size="small" onClick={() => setShowOtherClinics(false)}>Close</Button>
                 </Box>
-                <Grid container spacing={2}>
-                  {otherClinicsWithAvailability.map((clinic) => (
+                {otherClinicsWithAvailability.length === 0 ? (
+                  <Alert severity="info">No other clinics have doctors for this specialization.</Alert>
+                ) : (
+                  <Grid container spacing={2}>
+                    {otherClinicsWithAvailability.map((clinic) => (
                     <Grid size={{ xs: 12, sm: 6 }} key={clinic.id}>
                       <Card elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: '12px' }}>
                         <CardContent sx={{ p: 2 }}>
@@ -324,7 +329,7 @@ export function BookingPickerPage() {
                                 {clinic.address}
                               </Typography>
                               <Typography variant="caption" color="primary.main" fontWeight={600}>
-                                {clinic.availableDoctors} doctor{clinic.availableDoctors !== 1 ? 's' : ''} available
+                                {clinic.availableDoctors} matching doctor{clinic.availableDoctors !== 1 ? 's' : ''}
                               </Typography>
                             </Box>
                           </Box>
@@ -333,7 +338,7 @@ export function BookingPickerPage() {
                           {clinic.availableDoctorDetails && clinic.availableDoctorDetails.length > 0 && (
                             <Box sx={{ mb: 1.5, pt: 1.5, borderTop: '1px solid #e2e8f0' }}>
                               <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ mb: 0.75, display: 'block' }}>
-                                Available {selectedSpecialization} Doctors:
+                                {selectedSpecialization} Doctors:
                               </Typography>
                               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                                 {clinic.availableDoctorDetails.map((doc, idx) => (
@@ -388,8 +393,9 @@ export function BookingPickerPage() {
                         </CardContent>
                       </Card>
                     </Grid>
-                  ))}
-                </Grid>
+                    ))}
+                  </Grid>
+                )}
               </Box>
             )}
 
@@ -444,7 +450,7 @@ export function BookingPickerPage() {
                         </Typography>
 
                         <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
-                          <Chip label="Slots Available" size="small" color="success" sx={{ fontSize: '0.68rem', height: 20 }} />
+                          <Chip label="Clinic doctor" size="small" variant="outlined" sx={{ fontSize: '0.68rem', height: 20 }} />
                           <Chip label={`${doctor.defaultVisitDuration || 30} min`} size="small" variant="outlined" sx={{ fontSize: '0.68rem', height: 20 }} />
                         </Box>
                       </CardContent>
@@ -479,7 +485,7 @@ export function BookingPickerPage() {
                 <Divider sx={{ mb: 2 }} />
                 <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
                   <Typography variant="h6" fontWeight={700} color="#0f172a">
-                    Available Slots for {selectedDoctor.name.startsWith('Dr.') ? selectedDoctor.name : `Dr. ${selectedDoctor.name}`}
+                    Slots for {selectedDoctor.name.startsWith('Dr.') ? selectedDoctor.name : `Dr. ${selectedDoctor.name}`}
                   </Typography>
                   <Button
                     size="small"
@@ -492,24 +498,46 @@ export function BookingPickerPage() {
                 <Grid container spacing={1.5}>
                   {availableSlots.map((slot) => (
                     <Grid size={{ xs: 12, sm: 6, md: 4 }} key={slot.id}>
-                      <Card elevation={0} sx={{ border: '1px solid #e2e8f0', borderRadius: '12px', p: 1.5, height: '100%' }}>
+                      <Card
+                        elevation={0}
+                        sx={{
+                          border: '1px solid',
+                          borderColor: slot.isBooked || slot.isBlocked ? '#d1d5db' : '#e2e8f0',
+                          bgcolor: slot.isBooked || slot.isBlocked ? '#f1f3f5' : '#fff',
+                          borderRadius: '12px',
+                          p: 1.5,
+                          height: '100%',
+                        }}
+                      >
                         <CardContent>
-                          <Typography variant="subtitle1" fontWeight={700} color="#0f172a">
+                          <Typography
+                            variant="subtitle1"
+                            fontWeight={700}
+                            color={slot.isBooked || slot.isBlocked ? 'text.disabled' : '#0f172a'}
+                          >
                             {formatTime(slot.startTime)} - {formatTime(slot.endTime)}
                           </Typography>
                           <Typography variant="body2" color="text.secondary">
                             {slot.durationMinutes} min consultation
                           </Typography>
+                          {(slot.isBooked || slot.isBlocked) && (
+                            <Chip
+                              label={slot.isBlocked ? 'Unavailable' : 'Booked'}
+                              size="small"
+                              sx={{ mt: 1, bgcolor: '#d1d5db', color: '#4b5563' }}
+                            />
+                          )}
                           <Box sx={{ mt: 1.5 }}>
                             <Button
                               fullWidth
                               variant="contained"
                               size="small"
+                              disabled={slot.isBooked || slot.isBlocked}
                               onClick={() => handleBookSlot(slot)}
                               startIcon={<ArrowForward />}
                               sx={{ borderRadius: '8px' }}
                             >
-                              Book This Slot
+                              {slot.isBlocked ? 'Unavailable' : slot.isBooked ? 'Booked' : 'Book This Slot'}
                             </Button>
                           </Box>
                         </CardContent>
@@ -517,12 +545,12 @@ export function BookingPickerPage() {
                     </Grid>
                   ))}
                 </Grid>
-                {availableSlots.length === 0 && (
-                  <Alert severity="info" sx={{ mt: 2 }}>
-                    No available slots for this doctor on the selected date.
-                  </Alert>
-                )}
               </Box>
+            )}
+            {selectedDoctor && availableSlots.length === 0 && !loadingSlots && (
+              <Alert severity="info" sx={{ mt: 2 }}>
+                No slots have been created for this doctor on the selected date.
+              </Alert>
             )}
           </CardContent>
         </Card>

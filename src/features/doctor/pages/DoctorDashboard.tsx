@@ -718,7 +718,8 @@ function getWorkingHoursForClinic(
   date: Date,
 ): string {
   const dayKeys = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-  const hours = doctor.workingHours[dayKeys[date.getDay()]];
+  // Older Firestore doctor records may not have a workingHours map yet.
+  const hours = doctor.workingHours?.[dayKeys[date.getDay()]];
   if (!hours) return "Not scheduled";
   return `${hours.start} - ${hours.end}`;
 }

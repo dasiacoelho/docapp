@@ -134,9 +134,9 @@ export function Register() {
                 value={formData.role}
                 label="Register as"
                 onChange={(e) => handleChange("role", e.target.value as Role)}
+                disabled
               >
                 <MenuItem value="patient">Patient</MenuItem>
-                <MenuItem value="doctor">Doctor</MenuItem>
               </Select>
             </FormControl>
             <TextField

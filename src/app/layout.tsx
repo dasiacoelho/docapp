@@ -20,7 +20,6 @@ import {
   useTheme,
   Tooltip,
   Chip,
-  Button,
 } from '@mui/material';
 import {
   Menu as MenuIcon,
@@ -33,7 +32,6 @@ import {
   PeopleRounded,
   ScheduleRounded,
   MedicalServicesRounded,
-  SwapHorizRounded,
   Close as CloseIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../features/auth/hooks';
@@ -65,10 +63,9 @@ export function Layout() {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout, switchRole } = useAuth();
+  const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [anchorEl, setAnchorEl] = React.useState<HTMLElement | null>(null);
-  const [roleAnchorEl, setRoleAnchorEl] = React.useState<HTMLElement | null>(null);
 
   const handleDrawerToggle = () => setMobileOpen(!mobileOpen);
   const handleProfileMenuOpen = (e: React.MouseEvent<HTMLElement>) => setAnchorEl(e.currentTarget);
@@ -78,16 +75,6 @@ export function Layout() {
     handleProfileMenuClose();
     await logout();
     navigate('/login');
-  };
-
-  const handleRoleSwitch = (newRole: 'patient' | 'doctor' | 'admin') => {
-    setRoleAnchorEl(null);
-    handleProfileMenuClose();
-    setMobileOpen(false);
-    switchRole(newRole);
-    if (newRole === 'patient') navigate('/patient/booking');
-    else if (newRole === 'doctor') navigate('/doctor/dashboard');
-    else navigate('/admin/dashboard');
   };
 
   const getMenuItems = () => {
@@ -116,7 +103,7 @@ export function Layout() {
           width: 38, height: 38, borderRadius: '10px',
           background: 'linear-gradient(135deg, #0284c7 0%, #0d9488 100%)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: '#fff', boxShadow: '0 4px 12px rgba(2, 132, 199, 0.3)', flexShrink: 0,
+          color: '#fff', boxShadow: '0 4px 12px rgba(2,132,199,0.3)', flexShrink: 0,
         }}>
           <MedicalServicesRounded sx={{ fontSize: 20 }} />
         </Box>
@@ -150,7 +137,7 @@ export function Layout() {
                   sx={{
                     borderRadius: '10px', py: 1, px: 1.5, position: 'relative',
                     ...(isSelected && {
-                      backgroundColor: 'rgba(2, 132, 199, 0.08) !important',
+                      backgroundColor: 'rgba(2,132,199,0.08) !important',
                       color: 'primary.main',
                       '&::before': {
                         content: '""', position: 'absolute', left: 0,
@@ -172,27 +159,8 @@ export function Layout() {
         </List>
       </Box>
 
-      {/* Role Switcher */}
-      <Box sx={{ px: 1.5, pb: 1 }}>
-        <Box sx={{ p: 1.5, borderRadius: '12px', bgcolor: '#f8fafc', border: '1px solid #e2e8f0' }}>
-          <Typography variant="caption" color="text.secondary" fontWeight={700} display="block"
-            sx={{ mb: 1, fontSize: '0.62rem', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-            Demo Role Switcher
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 0.5 }}>
-            {(['patient', 'doctor', 'admin'] as const).map((r) => (
-              <Chip key={r} label={r.charAt(0).toUpperCase() + r.slice(1)} clickable size="small"
-                variant={user?.role === r ? 'filled' : 'outlined'}
-                color={user?.role === r ? 'primary' : 'default'}
-                onClick={() => handleRoleSwitch(r)}
-                sx={{ fontWeight: 600, fontSize: '0.68rem', flex: 1, height: 24 }} />
-            ))}
-          </Box>
-        </Box>
-      </Box>
-
-      {/* Footer */}
-      <Box sx={{ px: 2, py: 1.25, borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0 }}>
+      {/* Footer User Info */}
+      <Box sx={{ px: 2, py: 1.5, borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 1.5, flexShrink: 0 }}>
         <Avatar src={user?.photoURL} sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontWeight: 700, fontSize: '0.78rem', flexShrink: 0 }}>
           {user?.displayName?.[0]?.toUpperCase() || 'U'}
         </Avatar>
@@ -201,12 +169,14 @@ export function Layout() {
             {user?.displayName || 'User'}
           </Typography>
           <Typography variant="caption" color="text.secondary" noWrap display="block" sx={{ fontSize: '0.7rem' }}>
-            {user?.email || 'authenticated'}
+            {user?.email || ''}
           </Typography>
         </Box>
-        <IconButton size="small" onClick={handleLogout} title="Sign Out">
-          <LogoutRounded fontSize="small" color="action" />
-        </IconButton>
+        <Tooltip title="Sign Out">
+          <IconButton size="small" onClick={handleLogout}>
+            <LogoutRounded fontSize="small" color="action" />
+          </IconButton>
+        </Tooltip>
       </Box>
     </Box>
   );
@@ -231,7 +201,7 @@ export function Layout() {
             )}
             {isMobile ? (
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-                <Box sx={{ width: 26, height: 26, borderRadius: '7px', background: 'linear-gradient(135deg, #0284c7, #0d9488)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Box sx={{ width: 26, height: 26, borderRadius: '7px', background: 'linear-gradient(135deg,#0284c7,#0d9488)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <MedicalServicesRounded sx={{ fontSize: 14, color: '#fff' }} />
                 </Box>
                 <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#0f172a' }}>
@@ -245,30 +215,9 @@ export function Layout() {
             )}
           </Box>
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 0.5, md: 1 } }}>
-            <Button size="small" variant="outlined" color="primary" startIcon={<SwapHorizRounded />}
-              onClick={(e) => setRoleAnchorEl(e.currentTarget)}
-              sx={{
-                borderRadius: '20px', px: { xs: 1, md: 1.5 }, py: 0.4,
-                fontSize: '0.73rem', textTransform: 'none',
-                '& .MuiButton-startIcon': { mr: { xs: 0, sm: 0.5 } },
-              }}>
-              <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Switch Role ({user?.role})</Box>
-              <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' }, ml: '-2px', textTransform: 'capitalize' }}>{user?.role}</Box>
-            </Button>
-
-            <Menu anchorEl={roleAnchorEl} open={Boolean(roleAnchorEl)} onClose={() => setRoleAnchorEl(null)}
-              transformOrigin={{ horizontal: 'right', vertical: 'top' }}
-              anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
-              slotProps={{ paper: { sx: { borderRadius: '12px', mt: 0.5 } } }}>
-              <MenuItem onClick={() => handleRoleSwitch('patient')} selected={user?.role === 'patient'}>Patient Portal (Jane Doe)</MenuItem>
-              <MenuItem onClick={() => handleRoleSwitch('doctor')} selected={user?.role === 'doctor'}>Doctor Portal (Dr. Sarah Jenkins)</MenuItem>
-              <MenuItem onClick={() => handleRoleSwitch('admin')} selected={user?.role === 'admin'}>Admin Portal (Hospital Operations)</MenuItem>
-            </Menu>
-
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <NotificationBell />
-
-            <Tooltip title="User Profile & Settings">
+            <Tooltip title="Account settings">
               <IconButton onClick={handleProfileMenuOpen} size="small" sx={{ p: 0.3 }}>
                 <Avatar src={user?.photoURL} sx={{ width: 32, height: 32, bgcolor: 'primary.main', border: '2px solid #e2e8f0', fontSize: '0.78rem' }}>
                   {user?.displayName?.[0]?.toUpperCase() || 'U'}
@@ -287,7 +236,7 @@ export function Layout() {
           {drawer}
         </Drawer>
         <Drawer variant="permanent" open
-          sx={{ display: { xs: 'none', md: 'block' }, '& .MuiDrawer-paper': { boxSizing: 'border-box', width: DRAWER_WIDTH, borderRight: '1px solid #e2e8f0', bgcolor: '#ffffff' } }}>
+          sx={{ display: { xs: 'none', md: 'block' }, '& .MuiDrawer-paper': { boxSizing: 'border-box', width: DRAWER_WIDTH, borderRight: '1px solid #e2e8f0', bgcolor: '#fff' } }}>
           {drawer}
         </Drawer>
       </Box>

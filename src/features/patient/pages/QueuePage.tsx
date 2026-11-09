@@ -37,7 +37,6 @@ import {
   firestoreService,
   patientService,
   toDate,
-  normalizeFirestoreData,
 } from "../../../services/firestore";
 import type { Appointment, Doctor } from "../../../types";
 import {
@@ -139,24 +138,19 @@ export function QueuePage() {
   const setupRealtimeListener = () => {
     if (!appointmentId) return;
 
-    const unsub = firestoreService.firestoreService
-      .collection("appointments")
-      .doc(appointmentId)
-      .onSnapshot(
-        (doc) => {
-          if (doc.exists()) {
-            const updated = normalizeFirestoreData({
-              id: doc.id,
-              ...doc.data(),
-            }) as Appointment;
-            setAppointment(updated);
-            if (clinicAppointments.length > 0) {
-              updateQueueStats(clinicAppointments, updated.id);
-            }
+    const unsub = firestoreService.onSnapshot(
+      "appointments",
+      appointmentId,
+      (snap) => {
+        if (snap.exists()) {
+          const updated = { id: snap.id, ...snap.data() } as Appointment;
+          setAppointment(updated);
+          if (clinicAppointments.length > 0) {
+            updateQueueStats(clinicAppointments, updated.id);
           }
-        },
-        (err) => console.error("Realtime listener error:", err),
-      );
+        }
+      },
+    );
     setUnsubscribe(unsub);
   };
 
@@ -214,7 +208,7 @@ export function QueuePage() {
 
   if (error || !appointment) {
     return (
-      <Alert severity="error" onClose={() => navigate("/patient/dashboard")}>
+      <Alert severity="error" onClose={() => navigate("/patient/booking")}>
         {error || "Appointment not found"}
       </Alert>
     );
@@ -239,7 +233,7 @@ export function QueuePage() {
         <Button
           variant="text"
           startIcon={<ArrowBack />}
-          onClick={() => navigate("/patient/dashboard")}
+          onClick={() => navigate("/patient/booking")}
         >
           Back to Dashboard
         </Button>

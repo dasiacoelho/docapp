@@ -1,66 +1,136 @@
-import { format, parseISO, addMinutes, differenceInMinutes, isBefore, isAfter, startOfDay, endOfDay } from 'date-fns';
+import { format, parseISO, addMinutes, differenceInMinutes, isBefore, isAfter, startOfDay, endOfDay, isValid } from 'date-fns';
 
-export function formatDate(date: Date | string, pattern = 'MMM d, yyyy'): string {
-  const d = typeof date === 'string' ? parseISO(date) : date;
-  return format(d, pattern);
+function safeDate(date: Date | string | number | null | undefined): Date | null {
+  if (!date) return null;
+  const timestamp = date as Date & { toDate?: () => Date };
+  let d: Date;
+  if (typeof date === 'string') {
+    d = parseISO(date);
+  } else if (typeof timestamp.toDate === 'function') {
+    d = timestamp.toDate();
+  } else if (date instanceof Date) {
+    d = date;
+  } else if (typeof date === 'object' && 'seconds' in date) {
+    const seconds = Number((date as { seconds: number }).seconds);
+    const nanoseconds = Number((date as { nanoseconds?: number }).nanoseconds || 0);
+    d = new Date(seconds * 1000 + Math.floor(nanoseconds / 1_000_000));
+  } else {
+    d = new Date(date);
+  }
+  return isValid(d) ? d : null;
 }
 
-export function formatTime(date: Date | string, pattern = 'h:mm a'): string {
-  const d = typeof date === 'string' ? parseISO(date) : date;
-  return format(d, pattern);
+export function formatDate(date: Date | string | number | null | undefined, pattern = 'MMM d, yyyy'): string {
+  const d = safeDate(date);
+  if (!d) return '';
+  try {
+    return format(d, pattern);
+  } catch {
+    return '';
+  }
 }
 
-export function formatDateTime(date: Date | string): string {
-  return `${formatDate(date)} at ${formatTime(date)}`;
+export function formatTime(date: Date | string | number | null | undefined, pattern = 'h:mm a'): string {
+  const d = safeDate(date);
+  if (!d) return '';
+  try {
+    return format(d, pattern);
+  } catch {
+    return '';
+  }
 }
 
-export function getDayOfWeek(date: Date | string): number {
-  const d = typeof date === 'string' ? parseISO(date) : date;
+export function formatDateTime(date: Date | string | number | null | undefined): string {
+  const d = safeDate(date);
+  if (!d) return '';
+  try {
+    return `${formatDate(d)} at ${formatTime(d)}`;
+  } catch {
+    return '';
+  }
+}
+
+export function getDayOfWeek(date: Date | string | number | null | undefined): number {
+  const d = safeDate(date);
+  if (!d) return -1;
   return d.getDay();
 }
 
 export function getDayName(dayOfWeek: number): string {
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  return days[dayOfWeek];
+  return days[dayOfWeek] || '';
 }
 
 export function getShortDayName(dayOfWeek: number): string {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-  return days[dayOfWeek];
+  return days[dayOfWeek] || '';
 }
 
-export function isSameDay(date1: Date | string, date2: Date | string): boolean {
-  const d1 = typeof date1 === 'string' ? parseISO(date1) : date1;
-  const d2 = typeof date2 === 'string' ? parseISO(date2) : date2;
-  return format(d1, 'yyyy-MM-dd') === format(d2, 'yyyy-MM-dd');
+export function isSameDay(date1: Date | string | number | null | undefined, date2: Date | string | number | null | undefined): boolean {
+  if (!date1 || !date2) return false;
+  try {
+    const d1 = safeDate(date1);
+    const d2 = safeDate(date2);
+    if (!d1 || !d2) return false;
+    return format(d1, 'yyyy-MM-dd') === format(d2, 'yyyy-MM-dd');
+  } catch {
+    return false;
+  }
 }
 
-export function isToday(date: Date | string): boolean {
-  return isSameDay(date, new Date());
+export function isToday(date: Date | string | number | null | undefined): boolean {
+  if (!date) return false;
+  try {
+    return isSameDay(date, new Date());
+  } catch {
+    return false;
+  }
 }
 
-export function isPast(date: Date | string): boolean {
-  const d = typeof date === 'string' ? parseISO(date) : date;
-  return isBefore(d, new Date());
+export function isPast(date: Date | string | number | null | undefined): boolean {
+  if (!date) return false;
+  try {
+    const d = safeDate(date);
+    if (!d) return false;
+    return isBefore(d, new Date());
+  } catch {
+    return false;
+  }
 }
 
-export function isFuture(date: Date | string): boolean {
-  const d = typeof date === 'string' ? parseISO(date) : date;
-  return isAfter(d, new Date());
+export function isFuture(date: Date | string | number | null | undefined): boolean {
+  if (!date) return false;
+  try {
+    const d = safeDate(date);
+    if (!d) return false;
+    return isAfter(d, new Date());
+  } catch {
+    return false;
+  }
 }
 
-export function addMinutesToDate(date: Date | string, minutes: number): Date {
-  const d = typeof date === 'string' ? parseISO(date) : date;
-  return addMinutes(d, minutes);
+export function addMinutesToDate(date: Date | string | number | null | undefined, minutes: number): Date | null {
+  const d = safeDate(date);
+  if (!d) return null;
+  try {
+    return addMinutes(d, minutes);
+  } catch {
+    return null;
+  }
 }
 
-export function getMinutesDifference(start: Date | string, end: Date | string): number {
-  const s = typeof start === 'string' ? parseISO(start) : start;
-  const e = typeof end === 'string' ? parseISO(end) : end;
-  return differenceInMinutes(e, s);
+export function getMinutesDifference(start: Date | string | number | null | undefined, end: Date | string | number | null | undefined): number {
+  const s = safeDate(start);
+  const e = safeDate(end);
+  if (!s || !e) return 0;
+  try {
+    return differenceInMinutes(e, s);
+  } catch {
+    return 0;
+  }
 }
 
-export function getTimeString(date: Date | string): string {
+export function getTimeString(date: Date | string | number | null | undefined): string {
   return formatTime(date, 'HH:mm');
 }
 
@@ -69,21 +139,36 @@ export function parseTimeString(timeStr: string): { hours: number; minutes: numb
   return { hours, minutes };
 }
 
-export function createDateWithTime(date: Date | string, timeStr: string): Date {
-  const d = typeof date === 'string' ? parseISO(date) : new Date(date);
-  const { hours, minutes } = parseTimeString(timeStr);
-  d.setHours(hours, minutes, 0, 0);
-  return d;
+export function createDateWithTime(date: Date | string | number | null | undefined, timeStr: string): Date | null {
+  const d = safeDate(date);
+  if (!d) return null;
+  try {
+    const { hours, minutes } = parseTimeString(timeStr);
+    d.setHours(hours, minutes, 0, 0);
+    return d;
+  } catch {
+    return null;
+  }
 }
 
-export function getStartOfDay(date: Date | string): Date {
-  const d = typeof date === 'string' ? parseISO(date) : date;
-  return startOfDay(d);
+export function getStartOfDay(date: Date | string | number | null | undefined): Date | null {
+  const d = safeDate(date);
+  if (!d) return null;
+  try {
+    return startOfDay(d);
+  } catch {
+    return null;
+  }
 }
 
-export function getEndOfDay(date: Date | string): Date {
-  const d = typeof date === 'string' ? parseISO(date) : date;
-  return endOfDay(d);
+export function getEndOfDay(date: Date | string | number | null | undefined): Date | null {
+  const d = safeDate(date);
+  if (!d) return null;
+  try {
+    return endOfDay(d);
+  } catch {
+    return null;
+  }
 }
 
 export function formatDuration(minutes: number): string {
@@ -95,17 +180,23 @@ export function formatDuration(minutes: number): string {
   return remainingMinutes > 0 ? `${hours}h ${remainingMinutes}m` : `${hours}h`;
 }
 
-export function getRelativeTimeString(date: Date | string): string {
-  const d = typeof date === 'string' ? parseISO(date) : date;
-  const now = new Date();
-  const diffMinutes = differenceInMinutes(d, now);
-  
-  if (diffMinutes < 0) {
-    return `${Math.abs(diffMinutes)} min ago`;
+export function getRelativeTimeString(date: Date | string | number | null | undefined): string {
+  if (!date) return '';
+  try {
+    const d = safeDate(date);
+    if (!d) return '';
+    const now = new Date();
+    const diffMinutes = differenceInMinutes(d, now);
+    
+    if (diffMinutes < 0) {
+      return `${Math.abs(diffMinutes)} min ago`;
+    }
+    if (diffMinutes < 60) {
+      return `in ${diffMinutes} min`;
+    }
+    const hours = Math.floor(diffMinutes / 60);
+    return `in ${hours}h`;
+  } catch {
+    return '';
   }
-  if (diffMinutes < 60) {
-    return `in ${diffMinutes} min`;
-  }
-  const hours = Math.floor(diffMinutes / 60);
-  return `in ${hours}h`;
 }

@@ -116,9 +116,15 @@ export function BookingPage() {
     setError(null);
     try {
       const dateStr = formatDate(selectedDate, "yyyy-MM-dd");
-      const data = await slotService.getAvailableSlots(doctorId, dateStr);
+      const data = await slotService.getByDoctorAndDate(doctorId, dateStr);
       setSlots(data);
-      if (selectedSlot && !data.find((s) => s.id === selectedSlot.id)) {
+      if (
+        selectedSlot &&
+        !data.some(
+          (slot) =>
+            slot.id === selectedSlot.id && !slot.isBooked && !slot.isBlocked,
+        )
+      ) {
         setSelectedSlot(null);
       }
     } catch (err) {
@@ -132,7 +138,7 @@ export function BookingPage() {
     if (activeStep > 0) {
       setActiveStep(activeStep - 1);
     } else {
-      navigate("/patient/dashboard");
+      navigate("/patient/booking");
     }
   };
 
@@ -317,10 +323,10 @@ export function BookingPage() {
               }}
             >
               <Typography variant="h6" component="h3" gutterBottom>
-                Available Slots for {formatDate(selectedDate)}
+                Appointment Slots for {formatDate(selectedDate)}
               </Typography>
               <Chip
-                label={slots.length}
+                label={`${slots.filter((slot) => !slot.isBooked && !slot.isBlocked).length} available`}
                 icon={<Schedule />}
                 size="small"
                 color="primary"
@@ -335,34 +341,52 @@ export function BookingPage() {
             ) : slots.length === 0 ? (
               <Alert severity="info" sx={{ mt: 2 }}>
                 <Info fontSize="small" sx={{ mr: 1 }} />
-                No available slots for this date. Please select another date.
+                No slots have been created for this date. Please select another date.
               </Alert>
             ) : (
               <List dense>
                 {slots.map((slot) => {
                   const isSelected = selectedSlot?.id === slot.id;
+                  const unavailable = slot.isBooked || slot.isBlocked;
                   return (
                     <ListItem key={slot.id} disablePadding sx={{ mb: 1 }}>
                       <ListItemButton
                         selected={isSelected}
+                        disabled={unavailable}
                         onClick={() => handleSlotSelect(slot)}
                         sx={{
                           borderRadius: "12px",
-                          border: isSelected
+                          border: unavailable
+                            ? "1px solid #d1d5db"
+                            : isSelected
                             ? "2px solid #0284c7"
                             : "1px solid #e2e8f0",
-                          bgcolor: isSelected
+                          bgcolor: unavailable
+                            ? "#e5e7eb"
+                            : isSelected
                             ? "rgba(2, 132, 199, 0.06)"
                             : "#ffffff",
+                          color: unavailable ? "text.disabled" : "text.primary",
                           py: 1.5,
+                          "&.Mui-disabled": {
+                            bgcolor: "#e5e7eb",
+                            color: "text.disabled",
+                            opacity: 0.8,
+                          },
                         }}
                       >
                         <ListItemIcon>
-                          <AccessTime color="primary" />
+                          <AccessTime
+                            sx={{ color: unavailable ? "text.disabled" : "primary.main" }}
+                          />
                         </ListItemIcon>
                         <ListItemText
                           primary={
-                            <Typography variant="subtitle1" fontWeight={700}>
+                            <Typography
+                              variant="subtitle1"
+                              fontWeight={700}
+                              color={unavailable ? "text.disabled" : "text.primary"}
+                            >
                               {formatTime(slot.startTime)} -{" "}
                               {formatTime(slot.endTime)}
                             </Typography>
@@ -376,16 +400,26 @@ export function BookingPage() {
                                 mt: 0.5,
                               }}
                             >
-                              <Chip
-                                label={`${slot.durationMinutes} min consultation`}
-                                size="small"
-                                variant="outlined"
-                              />
-                              <Chip
-                                label={`Estimated Token #${getEstimatedToken(clinic, selectedDate)}`}
-                                size="small"
-                                color="primary"
-                              />
+                              {unavailable ? (
+                                <Chip
+                                  label={slot.isBlocked ? "Unavailable" : "Booked"}
+                                  size="small"
+                                  sx={{ bgcolor: "#d1d5db", color: "#4b5563" }}
+                                />
+                              ) : (
+                                <>
+                                  <Chip
+                                    label={`${slot.durationMinutes} min consultation`}
+                                    size="small"
+                                    variant="outlined"
+                                  />
+                                  <Chip
+                                    label={`Estimated Token #${getEstimatedToken(clinic, selectedDate)}`}
+                                    size="small"
+                                    color="primary"
+                                  />
+                                </>
+                              )}
                             </Box>
                           }
                         />
